@@ -1,24 +1,6 @@
 import { motion } from 'framer-motion';
 import * as LucideIcons from 'lucide-react';
-
-const ICON_MAP = {
-  Smartphone: LucideIcons.Smartphone,
-  Tablet: LucideIcons.Tablet,
-  Laptop: LucideIcons.Laptop,
-  Printer: LucideIcons.Printer,
-  Cast: LucideIcons.Cast,
-  Speaker: LucideIcons.Speaker,
-  Tv: LucideIcons.Tv,
-  Gamepad2: LucideIcons.Gamepad2,
-  Camera: LucideIcons.Camera,
-  HardDrive: LucideIcons.HardDrive,
-  Router: LucideIcons.Router,
-  HelpCircle: LucideIcons.HelpCircle,
-  Monitor: LucideIcons.Monitor,
-  Terminal: LucideIcons.Terminal,
-  Cpu: LucideIcons.Cpu,
-  Home: LucideIcons.Home,
-};
+import { deviceIcon, deviceName } from '../utils/devices.js';
 
 // Color palette for device types
 const TYPE_COLORS = {
@@ -48,12 +30,12 @@ const TYPE_COLORS = {
   'Unknown device': '#64748B',
 };
 
-export default function DeviceNode({ device, x, y, dimmed, isMe, isClosest, closenessRank, onClick, onHover, onLeave }) {
-  const IconComponent = ICON_MAP[device.icon] || LucideIcons.HelpCircle;
+export default function DeviceNode({ device, x, y, dimmed, isMe, isNew, isClosest, closenessRank, onClick, onHover, onLeave }) {
+  const IconComponent = deviceIcon(device);
   const isOnline = device.status === 'online';
   const baseColor = TYPE_COLORS[device.deviceType] || '#64748B';
   const color = isMe ? '#FB923C' : baseColor;
-  const displayName = device.nickname || device.hostname || device.vendor || device.deviceType;
+  const displayName = deviceName(device);
   const truncatedName = displayName.length > 14 ? displayName.slice(0, 12) + '…' : displayName;
 
   const nodeSize = 32;
@@ -71,7 +53,7 @@ export default function DeviceNode({ device, x, y, dimmed, isMe, isClosest, clos
       transition={{ type: 'spring', stiffness: 150, damping: 20 }}
       className="cursor-pointer"
       onClick={onClick}
-      onMouseMove={(e) => onHover({ x: e.clientX, y: e.clientY, device, isMe, isClosest, closenessRank })}
+      onMouseMove={(e) => onHover({ x: e.clientX, y: e.clientY, device, isMe, isNew, isClosest, closenessRank })}
       onMouseLeave={onLeave}
       role="button"
       tabIndex={0}
@@ -199,6 +181,18 @@ export default function DeviceNode({ device, x, y, dimmed, isMe, isClosest, clos
       >
         {device.ip}
       </text>
+
+      {/* First seen within the last 24h */}
+      {isNew && (
+        <foreignObject x={x - 22} y={y + nodeSize + 30} width={44} height={16}>
+          <div className="flex items-center justify-center gap-0.5 px-1 py-0.5 rounded-full
+                          text-[8px] font-bold uppercase tracking-wider
+                          bg-purple-500/20 border border-purple-400/40 text-purple-300">
+            <LucideIcons.Sparkles className="w-2 h-2" />
+            New
+          </div>
+        </foreignObject>
+      )}
     </motion.g>
   );
 }

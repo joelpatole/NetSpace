@@ -1,11 +1,12 @@
 import {
-  Search, RefreshCw, Settings, Wifi, ToggleLeft, ToggleRight, List, Activity
+  Search, RefreshCw, Settings, Wifi, ToggleLeft, ToggleRight, List, Activity, Sparkles
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function Header({
   network, scanning, autoRefresh, onToggleAutoRefresh,
-  onScan, onOpenSettings, onOpenLogs, onOpenSpeedTest, searchQuery, onSearchChange, refreshInterval
+  onScan, onOpenSettings, onOpenLogs, onOpenSpeedTest, searchQuery, onSearchChange, refreshInterval,
+  newDeviceCount = 0
 }) {
   const capacity = network?.maxOverride || network?.estimatedCapacity || '—';
   const capacityLabel = network?.maxOverride ? 'rated' : 'est.';
@@ -40,6 +41,12 @@ export default function Header({
                 {network.connectedCount || 0} / {capacity} devices
                 <span className="text-ns-text-secondary font-normal ml-1">({capacityLabel})</span>
               </span>
+              {newDeviceCount > 0 && (
+                <span className="flex items-center gap-1 text-purple-300 font-medium">
+                  <Sparkles className="w-3 h-3" />
+                  {newDeviceCount} new today
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -93,11 +100,18 @@ export default function Header({
           <button
             id="logs-button"
             onClick={onOpenLogs}
-            className="p-2 rounded-lg border border-ns-border hover:border-ns-accent/30
+            className="relative p-2 rounded-lg border border-ns-border hover:border-ns-accent/30
                        hover:bg-ns-surface/50 transition-colors"
-            title="View Logs"
+            title="View activity"
           >
             <List className="w-4 h-4 text-ns-text-secondary" />
+            {newDeviceCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full
+                               bg-purple-500 text-white text-[9px] font-bold
+                               flex items-center justify-center">
+                {newDeviceCount}
+              </span>
+            )}
           </button>
 
           {/* Rescan button */}
@@ -143,6 +157,11 @@ export default function Header({
           <span className="text-ns-cyan font-medium whitespace-nowrap">
             {network.connectedCount || 0}/{capacity} online
           </span>
+          {newDeviceCount > 0 && (
+            <span className="text-purple-300 font-medium whitespace-nowrap flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />{newDeviceCount} new
+            </span>
+          )}
         </div>
       )}
     </header>

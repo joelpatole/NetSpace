@@ -64,3 +64,30 @@ export async function runSpeedTest() {
   if (!res.ok) throw new Error('Failed to run speed test');
   return res.json();
 }
+
+export async function fetchDeviceHistory(id) {
+  const res = await fetch(`${API_BASE}/devices/${encodeURIComponent(id)}/history`);
+  if (!res.ok) throw new Error('Failed to fetch device history');
+  return res.json();
+}
+
+export async function scanDevicePorts(id) {
+  const res = await fetch(`${API_BASE}/devices/${encodeURIComponent(id)}/ports`, {
+    method: 'POST'
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Port scan failed');
+  return data;
+}
+
+export async function fetchDeviceEvents() {
+  const res = await fetch(`${API_BASE}/events`);
+  if (!res.ok) throw new Error('Failed to fetch device events');
+  return res.json();
+}
+
+export async function clearDeviceEvents() {
+  const res = await fetch(`${API_BASE}/events`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to clear device events');
+  return res.json();
+}

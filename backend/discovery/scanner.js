@@ -2,10 +2,14 @@ import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import dns from 'dns';
 import net from 'net';
+import os from 'os';
 import { discoverGateway, generateSubnetIPs } from './gateway.js';
 import { classifyDevice } from './classifier.js';
 import { getOuiInfo } from './oui-lookup.js';
-import { getDeviceOverrides, getSettings, cacheNetworkInfo } from '../store/db.js';
+import {
+  getDeviceOverrides, getSettings, cacheNetworkInfo,
+  getAllDeviceRecords, upsertDeviceRecords, recordHistorySamples, addDeviceEvents
+} from '../store/db.js';
 
 const execAsync = promisify(exec);
 const dnsReverse = promisify(dns.reverse);
@@ -16,6 +20,7 @@ let deviceMap = new Map(); // keyed by MAC address
 let scanning = false;
 let lastScanTime = null;
 let scanInterval = null;
+let previousStatus = new Map(); // mac -> 'online' | 'offline', for join/leave detection
 
 /**
  * Main scanner class orchestrating the entire discovery pipeline.
@@ -35,7 +40,10 @@ class NetworkScanner {
       const gwInfo = await discoverGateway();
       const settings = await getSettings();
       
-      networkInfo = {
+      // Built locally and only published at the end of the scan: a scan can take
+      // longer than the refresh interval, and clobbering networkInfo up front
+      // made /api/network report 0 connected devices while one was in flight.
+      const info = {
         routerIp: gwInfo.routerIp,
         myIp: gwInfo.myIp,
         subnet: gwInfo.subnet,
@@ -98,7 +106,7 @@ class NetworkScanner {
         // Classification
         const classification = classifyDevice(
           { ip: entry.ip, mac, hostname, vendor },
-          networkInfo.routerIp
+          info.routerIp
         );
 
         // Get stored overrides
@@ -127,6 +135,15 @@ class NetworkScanner {
         deviceMap.set(mac, device);
       }
 
+      // Step 4b: Add this machine explicitly.
+      //
+      // A host never ARPs for its own address, so on Linux (`ip neigh`) and
+      // Windows the local machine is simply absent from the neighbour table.
+      // macOS is the odd one out: `arp -a` lists a `permanent` self entry, which
+      // is why the "You" node appeared there but nowhere else. Injecting it from
+      // the OS interface list makes the behaviour identical on every platform.
+      await this.addSelfDevice(gwInfo, now, seenMacs, pingResults);
+
       // Step 5: TCP probe fallback for devices that didn't respond to ICMP
       const probePromises = [];
       for (const [mac, device] of deviceMap) {
@@ -149,9 +166,12 @@ class NetworkScanner {
         }
       }
 
-      // Update connected count
-      const onlineCount = [...deviceMap.values()].filter(d => d.status === 'online').length;
-      networkInfo.connectedCount = onlineCount;
+      // Update connected count and publish
+      info.connectedCount = [...deviceMap.values()].filter(d => d.status === 'online').length;
+      networkInfo = info;
+
+      // Step 6: Record availability history and join/leave events
+      await this.recordIntelligence(now);
 
       // Persist network info cache
       await cacheNetworkInfo(networkInfo);
@@ -161,6 +181,115 @@ class NetworkScanner {
     } finally {
       scanning = false;
     }
+  }
+
+  /**
+   * Persist the device registry, emit join/leave/new events, and append a
+   * history sample. Runs once per scan; history writes are throttled inside
+   * recordHistorySamples so the JSON store is not rewritten every 20 seconds.
+   */
+  async recordIntelligence(now) {
+    const devices = [...deviceMap.values()];
+    const records = await getAllDeviceRecords();
+    // A fresh install has no registry yet — seed it silently rather than
+    // announcing every device on the network as "new".
+    const seeding = Object.keys(records).length === 0;
+
+    const events = [];
+    const updates = {};
+
+    for (const device of devices) {
+      const known = records[device.mac];
+      const label = device.nickname || device.hostname || device.vendor || device.deviceType;
+      const wasOnline = previousStatus.get(device.mac) === 'online';
+
+      if (device.status === 'online') {
+        // Prefer the persisted first-seen so it survives restarts.
+        if (known && known.firstSeen) device.firstSeen = known.firstSeen;
+
+        if (!known && !seeding) {
+          events.push({ type: 'new', mac: device.mac, name: label, ip: device.ip });
+        } else if (known && previousStatus.has(device.mac) && !wasOnline) {
+          events.push({ type: 'joined', mac: device.mac, name: label, ip: device.ip });
+        }
+
+        updates[device.mac] = {
+          firstSeen: (known && known.firstSeen) || device.firstSeen,
+          lastSeen: now,
+          name: label,
+          ip: device.ip
+        };
+      } else if (wasOnline) {
+        events.push({ type: 'left', mac: device.mac, name: label, ip: device.ip });
+      }
+
+      previousStatus.set(device.mac, device.status);
+    }
+
+    await upsertDeviceRecords(updates);
+
+    if (events.length > 0) {
+      await addDeviceEvents(events.map((e, i) => ({
+        id: `${Date.parse(now)}-${i}`,
+        timestamp: now,
+        ...e
+      })));
+    }
+
+    await recordHistorySamples(
+      devices.map(d => ({
+        mac: d.mac,
+        online: d.status === 'online',
+        pingMs: d.pingMs
+      })),
+      Date.parse(now)
+    );
+  }
+
+  /**
+   * Build and register the device entry for the machine NetSpace runs on.
+   * Returns the device, or null when the local IP/MAC could not be determined.
+   */
+  async addSelfDevice(gwInfo, now, seenMacs, pingResults) {
+    const { myIp, myMac, routerIp } = gwInfo;
+    if (!myIp || !myMac) {
+      console.warn('  \u26a0\ufe0f  Could not determine local IP/MAC — "You" device will be missing.');
+      return null;
+    }
+
+    const mac = myMac.toLowerCase();
+    seenMacs.add(mac);
+
+    const ouiInfo = getOuiInfo(mac);
+    const hostname = os.hostname().replace(/\.local\.?$/i, '') || null;
+    const classification = classifyDevice(
+      { ip: myIp, mac, hostname, vendor: ouiInfo.vendor, isLocal: true },
+      routerIp
+    );
+    const overrides = await getDeviceOverrides(mac);
+    const existing = deviceMap.get(mac);
+
+    const device = {
+      id: mac,
+      ip: myIp,
+      mac,
+      oui: ouiInfo.oui,
+      vendor: ouiInfo.vendor,
+      hostname,
+      isLocal: true,
+      isRandomizedMac: ouiInfo.isRandomized,
+      deviceType: classification.deviceType,
+      icon: classification.icon,
+      status: 'online',
+      firstSeen: (existing && existing.firstSeen) || overrides.firstSeen || now,
+      lastSeen: now,
+      nickname: overrides.nickname || null,
+      notes: overrides.notes || null,
+      pingMs: pingResults.get(myIp) ?? 0
+    };
+
+    deviceMap.set(mac, device);
+    return device;
   }
 
   /**
@@ -303,7 +432,10 @@ class NetworkScanner {
         // Try ip neigh first, fall back to arp -a
         try {
           ({ stdout } = await execAsync('ip neigh show'));
-          return this.parseIpNeigh(stdout);
+          const neighbours = this.parseIpNeigh(stdout);
+          if (neighbours.length > 0) return neighbours;
+          // Empty neighbour table (e.g. iproute2 missing entries) — try arp.
+          ({ stdout } = await execAsync('arp -a'));
         } catch {
           ({ stdout } = await execAsync('arp -a'));
         }
@@ -355,10 +487,13 @@ class NetworkScanner {
     const lines = stdout.split('\n');
 
     for (const line of lines) {
-      const match = line.match(/([\d.]+)\s+dev\s+\S+\s+lladdr\s+([\da-fA-F:]+)/);
-      if (match) {
-        entries.push({ ip: match[1], mac: match[2] });
-      }
+      // Anchor on a dotted quad so IPv6 neighbours are skipped — an address like
+      // `fe80::1` would otherwise yield a bogus "1" entry.
+      const match = line.match(/^(\d{1,3}(?:\.\d{1,3}){3})\s+dev\s+\S+\s+lladdr\s+((?:[\da-fA-F]{2}:){5}[\da-fA-F]{2})/);
+      if (!match) continue;
+      // FAILED/INCOMPLETE neighbours are unreachable, not connected devices.
+      if (/\b(FAILED|INCOMPLETE)\b/.test(line)) continue;
+      entries.push({ ip: match[1], mac: match[2] });
     }
 
     return entries;
@@ -417,6 +552,13 @@ class NetworkScanner {
       if (a.status !== b.status) return a.status === 'online' ? -1 : 1;
       return a.ip.localeCompare(b.ip, undefined, { numeric: true });
     });
+  }
+
+  /**
+   * Look up a single known device by MAC.
+   */
+  getDevice(mac) {
+    return deviceMap.get(mac) || null;
   }
 
   /**

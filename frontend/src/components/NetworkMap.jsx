@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import DeviceNode from './DeviceNode.jsx';
 import ConnectionLine from './ConnectionLine.jsx';
 import RouterNode from './RouterNode.jsx';
+import { isLocalDevice, isNewDevice, deviceName, relativeTime } from '../utils/devices.js';
 
 export default function NetworkMap({ network, devices, highlightedIds, onSelectDevice }) {
   const containerRef = useRef(null);
@@ -25,7 +26,8 @@ export default function NetworkMap({ network, devices, highlightedIds, onSelectD
   // Compute closeness ranks (1-indexed based on pingMs ascending)
   const closenessRanks = useMemo(() => {
     const candidates = devices.filter(
-      d => d.deviceType !== 'Router' && d.status === 'online' && d.pingMs != null && d.pingMs > 0
+      d => d.deviceType !== 'Router' && !isLocalDevice(d, network) &&
+           d.status === 'online' && d.pingMs != null && d.pingMs > 0
     );
     candidates.sort((a, b) => a.pingMs - b.pingMs);
     
@@ -34,17 +36,18 @@ export default function NetworkMap({ network, devices, highlightedIds, onSelectD
       rankMap.set(d.id, idx + 1);
     });
     return rankMap;
-  }, [devices]);
+  }, [devices, network]);
 
   // Compute which device is closest to router (lowest ping)
   const closestDeviceId = useMemo(() => {
     const candidates = devices.filter(
-      d => d.deviceType !== 'Router' && d.status === 'online' && d.pingMs != null && d.pingMs > 0
+      d => d.deviceType !== 'Router' && !isLocalDevice(d, network) &&
+           d.status === 'online' && d.pingMs != null && d.pingMs > 0
     );
     if (candidates.length === 0) return null;
     const closest = candidates.reduce((prev, curr) => (prev.pingMs < curr.pingMs ? prev : curr));
     return closest.id;
-  }, [devices]);
+  }, [devices, network]);
 
   // Compute layout positions sorted by closeness rank
   const { cx, cy, routerDevice, devicePositions } = useMemo(() => {
@@ -185,7 +188,8 @@ export default function NetworkMap({ network, devices, highlightedIds, onSelectD
                 x={pos.x}
                 y={pos.y}
                 dimmed={dimmed}
-                isMe={network?.myIp === device.ip}
+                isMe={isLocalDevice(device, network)}
+                isNew={isNewDevice(device)}
                 isClosest={closestDeviceId === device.id}
                 closenessRank={rank}
                 onClick={() => onSelectDevice(device)}
@@ -209,8 +213,9 @@ export default function NetworkMap({ network, devices, highlightedIds, onSelectD
             style={{ left: tooltip.x + 15, top: tooltip.y - 10 }}
           >
             <div className="font-medium text-ns-text flex items-center gap-2">
-              {tooltip.device.nickname || tooltip.device.hostname || tooltip.device.deviceType}
+              {deviceName(tooltip.device)}
               {tooltip.isMe && <span className="text-[9px] bg-orange-500/20 text-orange-400 px-1 py-0.5 rounded font-bold">YOU</span>}
+              {tooltip.isNew && <span className="text-[9px] bg-purple-500/20 text-purple-300 px-1 py-0.5 rounded font-bold">NEW</span>}
               {tooltip.closenessRank && (
                 <span className="text-[9px] bg-cyan-500/20 text-cyan-400 px-1 py-0.5 rounded font-bold">
                   RANK #{tooltip.closenessRank}
@@ -222,7 +227,8 @@ export default function NetworkMap({ network, devices, highlightedIds, onSelectD
               {tooltip.device.oui && <div>OUI: <span className="font-mono text-ns-cyan">{tooltip.device.oui}</span></div>}
               {tooltip.device.vendor && <div>Vendor: {tooltip.device.vendor}</div>}
               {tooltip.device.pingMs != null && <div>Ping: <span className="font-mono text-ns-cyan">{tooltip.device.pingMs} ms</span></div>}
-              <div>Last seen: {new Date(tooltip.device.lastSeen).toLocaleString()}</div>
+              <div>Last seen: {relativeTime(tooltip.device.lastSeen)}</div>
+              <div>First seen: {relativeTime(tooltip.device.firstSeen)}</div>
             </div>
           </motion.div>
         )}

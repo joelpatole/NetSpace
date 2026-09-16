@@ -49,7 +49,7 @@ const VENDOR_RULES = [
 
 /**
  * Classify a device based on hostname, vendor, and whether it's the gateway.
- * @param {object} device - { ip, mac, hostname, vendor }
+ * @param {object} device - { ip, mac, hostname, vendor, isLocal }
  * @param {string} gatewayIp - The router/gateway IP
  * @returns {{ deviceType: string, icon: string }}
  */
@@ -57,6 +57,13 @@ export function classifyDevice(device, gatewayIp) {
   // Router detection
   if (device.ip === gatewayIp) {
     return { deviceType: 'Router', icon: 'Router' };
+  }
+
+  // This machine — we know its OS for certain, so skip the guesswork.
+  if (device.isLocal) {
+    if (process.platform === 'darwin') return { deviceType: 'Mac', icon: 'Laptop' };
+    if (process.platform === 'win32') return { deviceType: 'Windows PC', icon: 'Monitor' };
+    if (process.platform === 'linux') return { deviceType: 'Linux', icon: 'Terminal' };
   }
 
   // Check hostname-based rules

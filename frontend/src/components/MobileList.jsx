@@ -1,25 +1,6 @@
 import { motion } from 'framer-motion';
-import { Router, Wifi, WifiOff } from 'lucide-react';
-import * as LucideIcons from 'lucide-react';
-
-const ICON_MAP = {
-  Smartphone: LucideIcons.Smartphone,
-  Tablet: LucideIcons.Tablet,
-  Laptop: LucideIcons.Laptop,
-  Printer: LucideIcons.Printer,
-  Cast: LucideIcons.Cast,
-  Speaker: LucideIcons.Speaker,
-  Tv: LucideIcons.Tv,
-  Gamepad2: LucideIcons.Gamepad2,
-  Camera: LucideIcons.Camera,
-  HardDrive: LucideIcons.HardDrive,
-  Router: LucideIcons.Router,
-  HelpCircle: LucideIcons.HelpCircle,
-  Monitor: LucideIcons.Monitor,
-  Terminal: LucideIcons.Terminal,
-  Cpu: LucideIcons.Cpu,
-  Home: LucideIcons.Home,
-};
+import { Router, Wifi, WifiOff, Sparkles, Zap } from 'lucide-react';
+import { deviceIcon, deviceName, isLocalDevice, isNewDevice } from '../utils/devices.js';
 
 export default function MobileList({ network, devices, onSelectDevice }) {
   const routerDevice = devices.find(d => d.deviceType === 'Router');
@@ -28,7 +9,10 @@ export default function MobileList({ network, devices, onSelectDevice }) {
 
   // Compute closeness ranks (1-indexed based on pingMs ascending)
   const closenessRanks = new Map();
-  const rankedCandidates = otherDevices.filter(d => d.status === 'online' && d.pingMs != null && d.pingMs > 0);
+  // The local machine pings itself in microseconds, so it is excluded from the ranking.
+  const rankedCandidates = otherDevices.filter(
+    d => !isLocalDevice(d, network) && d.status === 'online' && d.pingMs != null && d.pingMs > 0
+  );
   rankedCandidates.sort((a, b) => a.pingMs - b.pingMs);
   rankedCandidates.forEach((d, idx) => closenessRanks.set(d.id, idx + 1));
 
@@ -73,9 +57,10 @@ export default function MobileList({ network, devices, onSelectDevice }) {
       {/* Device list */}
       <div className="space-y-2">
         {otherDevices.map((device, idx) => {
-          const IconComponent = ICON_MAP[device.icon] || LucideIcons.HelpCircle;
+          const IconComponent = deviceIcon(device);
           const isOnline = device.status === 'online';
-          const isMe = network?.myIp === device.ip;
+          const isMe = isLocalDevice(device, network);
+          const isNew = isNewDevice(device);
           const rank = closenessRanks.get(device.id);
 
           return (
@@ -95,8 +80,13 @@ export default function MobileList({ network, devices, onSelectDevice }) {
 
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-ns-text truncate flex items-center gap-2 flex-wrap">
-                  <span>{device.nickname || device.hostname || device.vendor || device.deviceType}</span>
+                  <span>{deviceName(device)}</span>
                   {isMe && <span className="text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider">You</span>}
+                  {isNew && (
+                    <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-400/30 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider flex items-center gap-0.5">
+                      <Sparkles className="w-3 h-3" /> New
+                    </span>
+                  )}
                   {rank != null && (
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold uppercase flex items-center gap-0.5 ${
                       rank === 1
@@ -107,7 +97,7 @@ export default function MobileList({ network, devices, onSelectDevice }) {
                         ? 'bg-purple-500/20 text-purple-300 border border-purple-400/30'
                         : 'bg-ns-surface text-ns-text-secondary border border-ns-border'
                     }`}>
-                      {rank === 1 ? <LucideIcons.Zap className="w-3 h-3 text-ns-cyan" /> : null}
+                      {rank === 1 ? <Zap className="w-3 h-3 text-ns-cyan" /> : null}
                       Rank #{rank}
                     </span>
                   )}

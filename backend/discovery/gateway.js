@@ -61,41 +61,44 @@ export async function discoverGateway() {
     }
   }
 
-  // Find local IP and subnet from network interfaces
+  // Find the local IP, MAC and subnet from the OS interface list.
   const interfaces = os.networkInterfaces();
-  for (const [name, addrs] of Object.entries(interfaces)) {
-    for (const addr of addrs) {
-      if (addr.family === 'IPv4' && !addr.internal) {
-        // If we know the interface name, prefer it
-        if (interfaceName && name === interfaceName) {
-          localIp = addr.address;
-          subnetMask = addr.netmask;
-          cidr = netmaskToCidr(addr.netmask);
-          break;
-        }
-        // Otherwise, pick the first non-internal IPv4 that's on the same subnet as the gateway
-        if (!localIp && gatewayIp && sameSubnet(addr.address, gatewayIp, addr.netmask)) {
-          localIp = addr.address;
-          subnetMask = addr.netmask;
-          cidr = netmaskToCidr(addr.netmask);
-          interfaceName = name;
-        }
+  let myMac = null;
+
+  const useAddr = (name, addr) => {
+    localIp = addr.address;
+    subnetMask = addr.netmask;
+    cidr = netmaskToCidr(addr.netmask);
+    interfaceName = name;
+    myMac = normalizeMac(addr.mac);
+  };
+
+  // 1. Prefer the interface the default route actually uses.
+  if (interfaceName && interfaces[interfaceName]) {
+    const addr = interfaces[interfaceName].find(a => isUsableIPv4(a));
+    if (addr) useAddr(interfaceName, addr);
+  }
+
+  // 2. Otherwise, the first non-internal IPv4 sharing a subnet with the gateway.
+  if (!localIp && gatewayIp) {
+    for (const [name, addrs] of Object.entries(interfaces)) {
+      const addr = addrs.find(a => isUsableIPv4(a) && sameSubnet(a.address, gatewayIp, a.netmask));
+      if (addr) {
+        useAddr(name, addr);
+        break;
       }
     }
   }
 
-  // Last resort: just pick any non-internal IPv4
+  // 3. Last resort: any non-internal IPv4, skipping container/VM bridges.
   if (!localIp) {
-    for (const addrs of Object.values(interfaces)) {
-      for (const addr of addrs) {
-        if (addr.family === 'IPv4' && !addr.internal) {
-          localIp = addr.address;
-          subnetMask = addr.netmask;
-          cidr = netmaskToCidr(addr.netmask);
-          break;
-        }
+    for (const [name, addrs] of Object.entries(interfaces)) {
+      if (isVirtualInterface(name)) continue;
+      const addr = addrs.find(a => isUsableIPv4(a));
+      if (addr) {
+        useAddr(name, addr);
+        break;
       }
-      if (localIp) break;
     }
   }
 
@@ -108,12 +111,39 @@ export async function discoverGateway() {
   return {
     routerIp: gatewayIp,
     myIp: localIp,
+    myMac,
     subnet: subnet ? `${subnet}/${cidr}` : null,
     cidr,
     interfaceName,
     subnetMask,
     estimatedCapacity
   };
+}
+
+/**
+ * Node reports `family` as the string 'IPv4' on modern releases; older ones used 4.
+ */
+function isUsableIPv4(addr) {
+  return (addr.family === 'IPv4' || addr.family === 4) && !addr.internal;
+}
+
+/**
+ * Bridges created by Docker/libvirt/VPNs carry an IP but are not the LAN link.
+ */
+function isVirtualInterface(name) {
+  return /^(docker|br-|veth|virbr|vmnet|vboxnet|tun|tap|utun|zt)/i.test(name);
+}
+
+/**
+ * Normalize a MAC to lowercase colon form, rejecting the all-zero placeholder
+ * Node reports for interfaces without a hardware address.
+ */
+function normalizeMac(mac) {
+  if (!mac) return null;
+  const normalized = mac.toLowerCase().replace(/-/g, ':');
+  if (!/^([\da-f]{2}:){5}[\da-f]{2}$/.test(normalized)) return null;
+  if (normalized === '00:00:00:00:00:00') return null;
+  return normalized;
 }
 
 function netmaskToCidr(netmask) {

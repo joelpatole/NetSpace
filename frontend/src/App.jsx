@@ -10,6 +10,7 @@ import LoadingState from './components/LoadingState.jsx';
 import ErrorState from './components/ErrorState.jsx';
 import Footer from './components/Footer.jsx';
 import MobileList from './components/MobileList.jsx';
+import { isNewDevice } from './utils/devices.js';
 
 export default function App() {
   const {
@@ -17,12 +18,16 @@ export default function App() {
     autoRefresh, setAutoRefresh, scan, refresh, refreshSettings
   } = useNetwork();
 
-  const [selectedDevice, setSelectedDevice] = useState(null);
+  // Track the selection by id so the drawer follows live scan updates instead
+  // of showing a snapshot frozen at the moment the device was clicked.
+  const [selectedId, setSelectedId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [showSpeedTest, setShowSpeedTest] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768);
+
+  const selectedDevice = selectedId ? devices.find(d => d.id === selectedId) : null;
+  const newDeviceCount = devices.filter(d => d.status === 'online' && isNewDevice(d)).length;
 
   // Filter devices by search
   const filteredDevices = devices.filter(d => {
@@ -59,6 +64,7 @@ export default function App() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         refreshInterval={settings?.refreshIntervalSeconds}
+        newDeviceCount={newDeviceCount}
       />
 
       {error && <ErrorState message={error} onRetry={scan} />}
@@ -70,7 +76,7 @@ export default function App() {
             network={network}
             devices={searchQuery ? filteredDevices : devices}
             highlightedIds={highlightedIds}
-            onSelectDevice={setSelectedDevice}
+            onSelectDevice={(d) => setSelectedId(d.id)}
           />
         </div>
 
@@ -79,7 +85,7 @@ export default function App() {
           <MobileList
             network={network}
             devices={searchQuery ? filteredDevices : devices}
-            onSelectDevice={setSelectedDevice}
+            onSelectDevice={(d) => setSelectedId(d.id)}
           />
         </div>
       </main>
@@ -89,7 +95,8 @@ export default function App() {
       {selectedDevice && (
         <DeviceDrawer
           device={selectedDevice}
-          onClose={() => setSelectedDevice(null)}
+          network={network}
+          onClose={() => setSelectedId(null)}
           onUpdate={() => refresh()}
         />
       )}
