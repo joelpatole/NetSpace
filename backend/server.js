@@ -10,6 +10,7 @@ import { settingsRoutes } from './routes/settings.js';
 import { logsRoutes } from './routes/logs.js';
 import { eventsRoutes } from './routes/events.js';
 import { speedtestRoutes } from './routes/speedtest.js';
+import { networkHealthRoutes } from './routes/networkHealth.js';
 import { scanner } from './discovery/scanner.js';
 import { startConnectionMonitor } from './discovery/connectionMonitor.js';
 
@@ -31,6 +32,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/speedtest', speedtestRoutes);
+app.use('/api/network-health', networkHealthRoutes);
 
 // Serve production frontend build if it exists
 const distPath = path.join(__dirname, '..', 'frontend', 'dist');

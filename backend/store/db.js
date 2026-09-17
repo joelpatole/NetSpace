@@ -15,10 +15,11 @@ const defaultData = {
     onlineVendorLookupEnabled: false
   },
   networkInfo: null,  // cached network info from last scan
-  dropLogs: [],       // array of { id, timestamp, event, message }
+  dropLogs: [],       // array of { id, timestamp, event, message, duration?, diagnosis? }
   history: {},        // keyed by MAC: [{ t, o, p }] availability/latency samples
   historyUpdatedAt: null,
-  deviceEvents: []    // array of { id, timestamp, type, mac, name, ip }
+  deviceEvents: [],   // array of { id, timestamp, type, mac, name, ip }
+  networkHealth: null  // latest health snapshot from connection monitor
 };
 
 // Availability history is kept at a coarse resolution so the JSON store stays
@@ -85,9 +86,9 @@ export async function addDropLog(log) {
   const db = await getDb();
   if (!db.data.dropLogs) db.data.dropLogs = [];
   db.data.dropLogs.push(log);
-  // Keep only the last 100 logs
-  if (db.data.dropLogs.length > 100) {
-    db.data.dropLogs = db.data.dropLogs.slice(-100);
+  // Keep only the last 200 logs for richer history
+  if (db.data.dropLogs.length > 200) {
+    db.data.dropLogs = db.data.dropLogs.slice(-200);
   }
   await db.write();
 }
@@ -95,6 +96,21 @@ export async function addDropLog(log) {
 export async function clearDropLogs() {
   const db = await getDb();
   db.data.dropLogs = [];
+  await db.write();
+}
+
+// ---------------------------------------------------------------------------
+// Network Health persistence
+// ---------------------------------------------------------------------------
+
+export async function getNetworkHealth() {
+  const db = await getDb();
+  return db.data.networkHealth || null;
+}
+
+export async function updateNetworkHealth(data) {
+  const db = await getDb();
+  db.data.networkHealth = data;
   await db.write();
 }
 

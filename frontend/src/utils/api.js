@@ -91,3 +91,9 @@ export async function clearDeviceEvents() {
   if (!res.ok) throw new Error('Failed to clear device events');
   return res.json();
 }
+
+export async function fetchNetworkHealth() {
+  const res = await fetch(`${API_BASE}/network-health`);
+  if (!res.ok) throw new Error('Failed to fetch network health');
+  return res.json();
+}

@@ -1,12 +1,12 @@
 import {
-  Search, RefreshCw, Settings, Wifi, ToggleLeft, ToggleRight, List, Activity, Sparkles
+  Search, RefreshCw, Settings, Wifi, ToggleLeft, ToggleRight, List, Activity, Sparkles, HeartPulse
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function Header({
   network, scanning, autoRefresh, onToggleAutoRefresh,
-  onScan, onOpenSettings, onOpenLogs, onOpenSpeedTest, searchQuery, onSearchChange, refreshInterval,
-  newDeviceCount = 0
+  onScan, onOpenSettings, onOpenLogs, onOpenSpeedTest, onOpenHealth, searchQuery, onSearchChange, refreshInterval,
+  newDeviceCount = 0, healthStatus = 'healthy'
 }) {
   const capacity = network?.maxOverride || network?.estimatedCapacity || '—';
   const capacityLabel = network?.maxOverride ? 'rated' : 'est.';
@@ -94,6 +94,26 @@ export default function Header({
             title="Internet Speed Test"
           >
             <Activity className="w-4 h-4 text-ns-cyan" />
+          </button>
+
+          {/* Network Health */}
+          <button
+            id="health-button"
+            onClick={onOpenHealth}
+            className="relative p-2 rounded-lg border border-ns-border hover:border-ns-accent/30
+                       hover:bg-ns-surface/50 transition-colors"
+            title="Network Health Report"
+          >
+            <HeartPulse className={`w-4 h-4 ${
+              healthStatus === 'down' ? 'text-red-400' :
+              healthStatus === 'degraded' ? 'text-amber-400' :
+              'text-emerald-400'
+            }`} />
+            <span className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
+              healthStatus === 'down' ? 'bg-red-400 animate-pulse' :
+              healthStatus === 'degraded' ? 'bg-amber-400 animate-pulse' :
+              'bg-emerald-400'
+            }`} />
           </button>
 
           {/* Logs */}

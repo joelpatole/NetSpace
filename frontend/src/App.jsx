@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNetwork } from './hooks/useNetwork.js';
 import Header from './components/Header.jsx';
 import NetworkMap from './components/NetworkMap.jsx';
@@ -6,11 +6,13 @@ import DeviceDrawer from './components/DeviceDrawer.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import LogsModal from './components/LogsModal.jsx';
 import SpeedTestModal from './components/SpeedTestModal.jsx';
+import NetworkHealthModal from './components/NetworkHealthModal.jsx';
 import LoadingState from './components/LoadingState.jsx';
 import ErrorState from './components/ErrorState.jsx';
 import Footer from './components/Footer.jsx';
 import MobileList from './components/MobileList.jsx';
 import { isNewDevice } from './utils/devices.js';
+import { fetchNetworkHealth } from './utils/api.js';
 
 export default function App() {
   const {
@@ -24,7 +26,26 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [showSpeedTest, setShowSpeedTest] = useState(false);
+  const [showHealth, setShowHealth] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [healthStatus, setHealthStatus] = useState('healthy');
+  const healthIntervalRef = useRef(null);
+
+  // Periodically fetch health status for the header indicator
+  const loadHealthStatus = useCallback(async () => {
+    try {
+      const data = await fetchNetworkHealth();
+      setHealthStatus(data.status || 'healthy');
+    } catch {
+      // Silent fail — header dot stays green
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHealthStatus();
+    healthIntervalRef.current = setInterval(loadHealthStatus, 30000); // every 30s
+    return () => clearInterval(healthIntervalRef.current);
+  }, [loadHealthStatus]);
 
   const selectedDevice = selectedId ? devices.find(d => d.id === selectedId) : null;
   const newDeviceCount = devices.filter(d => d.status === 'online' && isNewDevice(d)).length;
@@ -61,6 +82,8 @@ export default function App() {
         onOpenSettings={() => setShowSettings(true)}
         onOpenLogs={() => setShowLogs(true)}
         onOpenSpeedTest={() => setShowSpeedTest(true)}
+        onOpenHealth={() => setShowHealth(true)}
+        healthStatus={healthStatus}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         refreshInterval={settings?.refreshIntervalSeconds}
@@ -116,6 +139,10 @@ export default function App() {
 
       {showSpeedTest && (
         <SpeedTestModal onClose={() => setShowSpeedTest(false)} />
+      )}
+
+      {showHealth && (
+        <NetworkHealthModal onClose={() => { setShowHealth(false); loadHealthStatus(); }} />
       )}
     </div>
   );

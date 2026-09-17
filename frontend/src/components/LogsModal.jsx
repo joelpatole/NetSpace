@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { X, Trash2, WifiOff, Wifi, Sparkles, LogIn, LogOut } from 'lucide-react';
+import { Trash2, WifiOff, Wifi, Sparkles, LogIn, LogOut } from 'lucide-react';
 import {
   fetchLogs, clearLogs, fetchDeviceEvents, clearDeviceEvents
 } from '../utils/api.js';
 import { relativeTime } from '../utils/devices.js';
+import DraggableModal from './DraggableModal.jsx';
 
 const TABS = [
   { key: 'devices', label: 'Device Activity' },
@@ -46,83 +46,60 @@ export default function LogsModal({ onClose }) {
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
-        onClick={onClose}
-      />
+    <DraggableModal
+      id="logs-modal"
+      title="Activity"
+      icon={Sparkles}
+      onClose={onClose}
+      maxWidth="max-w-lg"
+      maxHeight="max-h-[80vh]"
+      headerExtra={
+        <button
+          onClick={handleClear}
+          onPointerDown={(e) => e.stopPropagation()}
+          disabled={clearing || entries.length === 0}
+          className="px-3 py-1.5 rounded-lg border border-red-900/50 text-red-500 text-xs font-medium hover:bg-red-900/20 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          Clear
+        </button>
+      }
+    >
+      {/* Tabs */}
+      <div className="flex gap-1 px-5 py-3 border-b border-ns-border flex-shrink-0 bg-ns-card">
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              tab === t.key
+                ? 'bg-ns-accent/15 text-ns-accent border border-ns-accent/30'
+                : 'text-ns-text-secondary border border-transparent hover:bg-ns-surface/50'
+            }`}
+          >
+            {t.label}
+            <span className="ml-1.5 opacity-60">
+              {t.key === 'devices' ? events.length : logs.length}
+            </span>
+          </button>
+        ))}
+      </div>
 
-      {/* Modal */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-                   w-full max-w-lg bg-ns-card border border-ns-border rounded-2xl
-                   shadow-2xl z-50 flex flex-col max-h-[80vh]"
-        id="logs-modal"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 pb-3 border-b border-ns-border flex-shrink-0">
-          <h2 className="text-lg font-semibold text-ns-text">Activity</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={handleClear}
-              disabled={clearing || entries.length === 0}
-              className="px-3 py-1.5 rounded-lg border border-red-900/50 text-red-500 text-xs font-medium hover:bg-red-900/20 disabled:opacity-50 transition-colors flex items-center gap-1.5"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Clear
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-ns-surface transition-colors"
-            >
-              <X className="w-5 h-5 text-ns-text-secondary" />
-            </button>
+      {/* Body */}
+      <div className="p-0 overflow-y-auto flex-1">
+        {loading ? (
+          <div className="p-6 text-center text-ns-text-secondary text-sm">Loading…</div>
+        ) : entries.length === 0 ? (
+          <EmptyState isDevices={isDevices} />
+        ) : (
+          <div className="divide-y divide-ns-border/50">
+            {isDevices
+              ? events.map(e => <DeviceEventRow key={e.id} event={e} />)
+              : logs.map(log => <DropLogRow key={log.id} log={log} />)}
           </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex gap-1 px-5 py-3 border-b border-ns-border flex-shrink-0">
-          {TABS.map(t => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                tab === t.key
-                  ? 'bg-ns-accent/15 text-ns-accent border border-ns-accent/30'
-                  : 'text-ns-text-secondary border border-transparent hover:bg-ns-surface/50'
-              }`}
-            >
-              {t.label}
-              <span className="ml-1.5 opacity-60">
-                {t.key === 'devices' ? events.length : logs.length}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {/* Body */}
-        <div className="p-0 overflow-y-auto flex-1">
-          {loading ? (
-            <div className="p-6 text-center text-ns-text-secondary text-sm">Loading…</div>
-          ) : entries.length === 0 ? (
-            <EmptyState isDevices={isDevices} />
-          ) : (
-            <div className="divide-y divide-ns-border/50">
-              {isDevices
-                ? events.map(e => <DeviceEventRow key={e.id} event={e} />)
-                : logs.map(log => <DropLogRow key={log.id} log={log} />)}
-            </div>
-          )}
-        </div>
-      </motion.div>
-    </>
+        )}
+      </div>
+    </DraggableModal>
   );
 }
 
